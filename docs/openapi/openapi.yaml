@@ -1,0 +1,348 @@
+openapi: 3.0.3
+info:
+  title: GeoDesk GIS API
+  version: "1.0.0"
+  description: >
+    Газарзүйн солбилцолтой өгөгдөл унших, нэгтгэх, онлайн газрын зургаас
+    татах, рельефийн шинжилгээ (хаялбар, гольдрол) хийх, форматаар
+    хөрвүүлэх API.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.geodesk.local/v1
+    description: Sandbox server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      required: [error_code, message]
+      properties:
+        error_code:
+          type: string
+          example: "INVALID_GEOMETRY"
+        message:
+          type: string
+          example: "Uploaded shapefile contains an unclosed polygon ring."
+
+    Layer:
+      type: object
+      required: [layer_id, name, geometry_type, format]
+      properties:
+        layer_id:
+          type: string
+          example: "layer_7f3a21"
+        name:
+          type: string
+          example: "sukhbaatar_parking_boundary"
+        geometry_type:
+          type: string
+          enum: [point, line, polygon, raster]
+          example: "polygon"
+        format:
+          type: string
+          enum: [shapefile, geojson, kml, geotiff]
+          example: "geojson"
+        crs:
+          type: string
+          example: "EPSG:4326"
+
+    ContourResult:
+      type: object
+      required: [job_id, status, interval_m]
+      properties:
+        job_id:
+          type: string
+          example: "contour_job_55de"
+        status:
+          type: string
+          enum: [queued, processing, done, failed]
+          example: "done"
+        interval_m:
+          type: number
+          example: 1.0
+        output_layer_id:
+          type: string
+          example: "layer_contour_9a21"
+
+paths:
+  /layers/import:
+    post:
+      operationId: importLayer
+      summary: Вектор/растер өгөгдлийн файл импорт хийх
+      description: >
+        Shapefile, GeoJSON, KML (вектор) эсвэл GeoTIFF/DEM (растер) файлыг
+        серверт байршуулж, шинэ давхарга болгон бүртгэнэ.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, name]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Shapefile (.zip), GeoJSON, KML, эсвэл GeoTIFF файл
+                name:
+                  type: string
+                  example: "sukhbaatar_parking_boundary"
+      responses:
+        "200":
+          description: Амжилттай импорт хийгдэв
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Layer"
+              example:
+                layer_id: "layer_7f3a21"
+                name: "sukhbaatar_parking_boundary"
+                geometry_type: "polygon"
+                format: "geojson"
+                crs: "EPSG:4326"
+        "400":
+          description: Буруу формат эсвэл эвдэрсэн геометр
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "INVALID_GEOMETRY"
+                message: "Uploaded shapefile contains an unclosed polygon ring."
+        "500":
+          description: Серверийн дотоод алдаа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "INTERNAL_ERROR"
+                message: "File parser crashed unexpectedly."
+
+  /projects/{project_id}/layers/merge:
+    post:
+      operationId: mergeLayers
+      summary: Олон давхаргыг нэг төсөл болгон нэгтгэх
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "proj_main_road"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [layer_ids]
+              properties:
+                layer_ids:
+                  type: array
+                  items:
+                    type: string
+                  example: ["layer_7f3a21", "layer_contour_9a21"]
+      responses:
+        "200":
+          description: Давхаргууд амжилттай нэгтгэгдэв
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project_id:
+                    type: string
+                    example: "proj_main_road"
+                  merged_layer_count:
+                    type: integer
+                    example: 2
+        "404":
+          description: Төсөл эсвэл давхарга олдсонгүй
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "LAYER_NOT_FOUND"
+                message: "layer_id 'layer_contour_9a21' does not exist in this project."
+        "500":
+          description: Серверийн дотоод алдаа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "INTERNAL_ERROR"
+                message: "Merge operation failed during CRS reprojection."
+
+  /wms/layers:
+    get:
+      operationId: listWMSLayers
+      summary: Онлайн WMS/WMTS үйлчилгээнээс боломжтой давхаргуудыг жагсаах
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: bbox
+          in: query
+          required: true
+          schema:
+            type: string
+          example: "106.8,47.9,106.95,47.95"
+          description: "minLon,minLat,maxLon,maxLat"
+      responses:
+        "200":
+          description: Боломжтой давхаргын жагсаалт
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Layer"
+              example:
+                - layer_id: "wms_satellite_2026"
+                  name: "Satellite Basemap 2026"
+                  geometry_type: "raster"
+                  format: "geotiff"
+                  crs: "EPSG:3857"
+        "400":
+          description: bbox параметр буруу
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "INVALID_BBOX"
+                message: "bbox must contain exactly 4 comma-separated numbers."
+        "503":
+          description: Гадаад WMS үйлчилгээ хариу өгсөнгүй
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "WMS_UNAVAILABLE"
+                message: "Upstream WMS server timed out after 5s."
+
+  /terrain/contours:
+    post:
+      operationId: computeContours
+      summary: DEM өгөгдлөөс хаялбарын шугам тооцоолох (FR-09)
+      description: >
+        50MB хүртэлх DEM файлыг 8 секундын дотор боловсруулж, заасан
+        интервалтай хаялбарын шугам үүсгэнэ (±0.5м нарийвчлал).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dem_layer_id, interval_m]
+              properties:
+                dem_layer_id:
+                  type: string
+                  example: "layer_dem_44c1"
+                interval_m:
+                  type: number
+                  example: 1.0
+      responses:
+        "200":
+          description: Тооцоолол амжилттай дуусав
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContourResult"
+              example:
+                job_id: "contour_job_55de"
+                status: "done"
+                interval_m: 1.0
+                output_layer_id: "layer_contour_9a21"
+        "413":
+          description: DEM файл хэт том (>200MB)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "PAYLOAD_TOO_LARGE"
+                message: "DEM file exceeds 200MB limit; request rejected."
+        "422":
+          description: DEM дутуу өгөгдөлтэй (NoData)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "INVALID_DEM"
+                message: "DEM contains NoData cells covering 40% of extent."
+
+  /layers/{layer_id}/convert:
+    post:
+      operationId: convertLayer
+      summary: Давхаргыг өөр форматад хөрвүүлэх
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: layer_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "layer_7f3a21"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_format]
+              properties:
+                target_format:
+                  type: string
+                  enum: [shapefile, geojson, kml, geotiff]
+                  example: "geojson"
+      responses:
+        "200":
+          description: Хөрвүүлэлт амжилттай
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Layer"
+              example:
+                layer_id: "layer_7f3a21"
+                name: "sukhbaatar_parking_boundary"
+                geometry_type: "polygon"
+                format: "geojson"
+                crs: "EPSG:4326"
+        "415":
+          description: Дэмжигдэхгүй формат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "UNSUPPORTED_FORMAT"
+                message: "target_format 'dwg' is not supported."
+        "500":
+          description: Серверийн дотоод алдаа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "INTERNAL_ERROR"
+                message: "Format conversion failed unexpectedly."
