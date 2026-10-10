@@ -1,0 +1,38 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "sukhbaatar_parking_boundary"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              106.9165,
+              47.9188
+            ],
+            [
+              106.9185,
+              47.9188
+            ],
+            [
+              106.9185,
+              47.92
+            ],
+            [
+              106.9165,
+              47.92
+            ],
+            [
+              106.9165,
+              47.9188
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,323 @@
+openapi: 3.0.3
+info:
+  title: Corg.ly Pet Onboarding & Translation API
+  version: "1.0.0"
+  description: >
+    UE-5 лабораторийн даалгавар: Chad-ийн хуучин Corg.ly Onboarding API-г
+    (Bhatti et al., Ch. 5, p. 83) OpenAPI 3.0.3-аар дахин баримтжуулсан хувилбар.
+    Нохойн зураг байршуулах, хуцах дууг орчуулах, идэвхийн мэдэгдэлд
+    webhook бүртгэх гэсэн 3 endpoint-той.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.corg.ly/v1
+    description: Production Server
+  - url: ./mock/corgly/v1
+    description: Sandbox mock (GitHub Pages, spec-ийн жишээ хариуг буцаана)
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Pets
+    description: Нохойн профайл ба зураг
+  - name: Audio
+    description: Хуцах дууны орчуулга
+  - name: Webhooks
+    description: Идэвхийн мэдэгдлийн бүртгэл
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Corg.ly dashboard-оос авсан API токен.
+
+  schemas:
+    Error:
+      type: object
+      required: [error_code, message]
+      properties:
+        error_code:
+          type: string
+          example: "UNSUPPORTED_MEDIA"
+        message:
+          type: string
+          example: "photo must be image/jpeg or image/png."
+
+    PetProfile:
+      type: object
+      required: [pet_id, pet_name, breed]
+      properties:
+        pet_id:
+          type: string
+          example: "corgi_98231"
+        pet_name:
+          type: string
+          example: "Einstein"
+        breed:
+          type: string
+          example: "Pembroke Welsh Corgi"
+        photo_url:
+          type: string
+          format: uri
+          example: "https://media.corg.ly/photos/einstein.jpg"
+        status:
+          type: string
+          enum: [uploaded, processing]
+          example: "uploaded"
+
+    BarkTranslation:
+      type: object
+      required: [pet_id, translation, confidence]
+      properties:
+        pet_id:
+          type: string
+          example: "corgi_98231"
+        translation:
+          type: string
+          example: "I am hungry, please feed me."
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.92
+        detected_emotion:
+          type: string
+          enum: [hungry, playful, anxious, alert]
+          example: "hungry"
+
+    WebhookSubscription:
+      type: object
+      required: [webhook_id, callback_url, events, status]
+      properties:
+        webhook_id:
+          type: string
+          example: "hook_41ac9"
+        callback_url:
+          type: string
+          format: uri
+          example: "https://petcare.example.com/webhooks/corgly"
+        events:
+          type: array
+          items:
+            type: string
+            enum: [translation.completed, photo.processed, pet.activity]
+        status:
+          type: string
+          enum: [active, paused]
+          example: "active"
+
+  responses:
+    Unauthorized:
+      description: API токен байхгүй эсвэл хүчингүй
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error_code: "UNAUTHORIZED"
+            message: "Missing or invalid Bearer token."
+    InternalError:
+      description: Серверийн дотоод алдаа
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error_code: "INTERNAL_ERROR"
+            message: "Translation model is temporarily unavailable."
+
+paths:
+  /pets/upload-photo:
+    post:
+      operationId: uploadPetPhoto
+      tags: [Pets]
+      summary: Нохойн зураг байршуулж, профайл үүсгэх
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo, pet_name, breed]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: JPEG эсвэл PNG зураг (≤10MB)
+                pet_name:
+                  type: string
+                breed:
+                  type: string
+            examples:
+              einstein:
+                summary: Einstein нэртэй корги
+                value:
+                  photo: "einstein_corgi.jpg"
+                  pet_name: "Einstein"
+                  breed: "Pembroke Welsh Corgi"
+      responses:
+        "200":
+          description: Зураг байршиж, профайл үүсэв
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PetProfile"
+              examples:
+                uploaded:
+                  summary: Амжилттай байршуулсан профайл
+                  value:
+                    pet_id: "corgi_98231"
+                    pet_name: "Einstein"
+                    breed: "Pembroke Welsh Corgi"
+                    photo_url: "https://media.corg.ly/photos/einstein.jpg"
+                    status: "uploaded"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: Зураг 10MB-аас том
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "PHOTO_TOO_LARGE"
+                message: "photo exceeds the 10MB upload limit."
+        "415":
+          description: Дэмжигдэхгүй зургийн формат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "UNSUPPORTED_MEDIA"
+                message: "photo must be image/jpeg or image/png."
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /audio/translate-bark:
+    post:
+      operationId: translateBark
+      tags: [Audio]
+      summary: Хуцах дууны бичлэгийг орчуулах
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio, pet_id]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: WAV бичлэг (16 kHz, ≤30 сек)
+                pet_id:
+                  type: string
+            examples:
+              hungryBark:
+                summary: Einstein-ий хоолны өмнөх хуцалт
+                value:
+                  audio: "einstein_bark_sample.wav"
+                  pet_id: "corgi_98231"
+      responses:
+        "200":
+          description: Орчуулга амжилттай
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BarkTranslation"
+              examples:
+                hungry:
+                  summary: Өлссөн гэсэн утгатай хуцалт
+                  value:
+                    pet_id: "corgi_98231"
+                    translation: "I am hungry, please feed me."
+                    confidence: 0.92
+                    detected_emotion: "hungry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: pet_id олдсонгүй
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "PET_NOT_FOUND"
+                message: "pet_id 'corgi_98231' is not registered."
+        "422":
+          description: Бичлэгт хуцах дуу илрээгүй
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "NO_BARK_DETECTED"
+                message: "Audio contains no bark longer than 0.3s."
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /webhooks/subscribe:
+    post:
+      operationId: subscribeWebhook
+      tags: [Webhooks]
+      summary: Нохойн идэвхийн мэдэгдэл хүлээн авах webhook бүртгэх
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pet_id, callback_url, events]
+              properties:
+                pet_id:
+                  type: string
+                callback_url:
+                  type: string
+                  format: uri
+                  description: HTTPS байх ёстой
+                events:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: [translation.completed, photo.processed, pet.activity]
+            examples:
+              translationHook:
+                summary: Орчуулга бэлэн болоход мэдэгдэл авах
+                value:
+                  pet_id: "corgi_98231"
+                  callback_url: "https://petcare.example.com/webhooks/corgly"
+                  events: ["translation.completed"]
+      responses:
+        "201":
+          description: Webhook бүртгэгдэв
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookSubscription"
+              examples:
+                active:
+                  summary: Идэвхтэй webhook
+                  value:
+                    webhook_id: "hook_41ac9"
+                    callback_url: "https://petcare.example.com/webhooks/corgly"
+                    events: ["translation.completed"]
+                    status: "active"
+        "400":
+          description: callback_url HTTPS биш
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error_code: "INSECURE_CALLBACK"
+                message: "callback_url must use https://."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"

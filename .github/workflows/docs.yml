@@ -1,0 +1,56 @@
+name: API docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install requests pyyaml pytest
+
+      - name: Start Prism mock servers
+        run: |
+          npx -y @stoplight/prism-cli@5.14.2 mock docs/openapi/corgly.yaml  -p 4010 -h 127.0.0.1 > prism-corgly.log 2>&1 &
+          npx -y @stoplight/prism-cli@5.14.2 mock docs/openapi/openapi.yaml -p 4011 -h 127.0.0.1 > prism-geodesk.log 2>&1 &
+          for port in 4010 4011; do
+            timeout 120 sh -c "until curl -s -o /dev/null http://127.0.0.1:$port/; do sleep 1; done"
+          done
+
+      - name: Run code samples against mock (Bhatti p. 94 Trustworthy)
+        run: pytest tests -v
+
+      - name: Lint specs and build Redoc + Swagger UI
+        run: sh scripts/build-docs.sh
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: lint-test-build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

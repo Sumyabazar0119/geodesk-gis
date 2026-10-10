@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GeoDesk GIS API — Swagger UI Sandbox</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui.min.css" />
+  <style>
+    body { margin: 0; }
+    .sandbox-note { font: 14px/1.5 system-ui, sans-serif; background: #fff8e1; border-bottom: 1px solid #f0d58c; padding: 10px 20px; }
+    .sandbox-note a { color: #1a5fb4; }
+  </style>
+</head>
+<body>
+  <div class="sandbox-note">
+    <strong>Sandbox:</strong> "Servers" цэснээс <em>Sandbox mock</em>-ыг сонгоод, <em>Authorize</em> дээр дурын токен
+    (жишээ нь <code>sandbox_demo_token</code>) оруулж "Try it out" хийнэ. Хариуг хөтөч доторх service worker
+    spec-ийн жишээгээр буцаана; токенгүй хүсэлтэд 401 өгнө.
+    · <a href="../">Redoc (унших хувилбар)</a>
+  </div>
+  <div id="swagger-ui"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-standalone-preset.min.js"></script>
+  <script>
+    async function registerSandboxMock() {
+      if (!("serviceWorker" in navigator)) return;
+      try {
+        await navigator.serviceWorker.register("../mock-sw.js", { scope: "../" });
+        await navigator.serviceWorker.ready;
+      } catch (error) {
+        console.warn("Sandbox mock unavailable:", error);
+      }
+    }
+
+    registerSandboxMock().finally(() => {
+      window.ui = SwaggerUIBundle({
+        urls: [
+          { url: "../openapi.yaml", name: "GeoDesk GIS API" },
+          { url: "../corgly.yaml", name: "Corg.ly Onboarding API (UE-5)" },
+        ],
+        "urls.primaryName": "GeoDesk GIS API",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        tryItOutEnabled: true,
+        displayRequestDuration: true,
+        filter: true,
+        persistAuthorization: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout",
+      });
+    });
+  </script>
+</body>
+</html>
